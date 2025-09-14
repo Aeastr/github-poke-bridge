@@ -2,8 +2,9 @@
   <img width="120" height="120" src="/assets/logo.png" alt="GitHub-Poke Bridge Logo">
   <h1><b>GitHub-Poke Bridge</b></h1>
   <p>
-    A proactive GitHub webhook-to-Poke notification bridge using <a href="https://github.com/jlowin/fastmcp">FastMCP</a> for real-time repository event forwarding.
+    A <strong>proof-of-concept</strong> proactive GitHub webhook-to-Poke notification bridge using <a href="https://github.com/jlowin/fastmcp">FastMCP</a> for real-time repository event forwarding.
   </p>
+  <p><em>My first MCP server, built in a few hours for the <a href="https://poke.com">🌴 Poke MCP Challenge</a>.</em></p>
 </div>
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/aeastr/github-poke-bridge)
@@ -16,6 +17,43 @@
 - 📄 **File access** - Retrieves and reads specific files from your repo
 - ⚙️ **Configurable** - Toggles diff content inclusion via environment variables
 - 🌿 **Comprehensive events** - Supports push, PRs, issues, branches, and tags
+
+## Capabilities
+
+### Webhook Support
+| Event Type | Description | Status |
+|-----------|-------------|--------|
+| Push | Code commits to any branch | ✅ Supported |
+| Pull Request | PR opened, closed, merged, etc. | ✅ Supported |
+| Issues | Issue created, closed, labeled, etc. | ✅ Supported |
+| Branch Creation | New branches created | ✅ Supported |
+| Branch Deletion | Branches deleted | ✅ Supported |
+| Tag Creation | New tags created | ✅ Supported |
+| Tag Deletion | Tags deleted | ✅ Supported |
+
+### MCP Tools
+| Tool Name | Description | Purpose |
+|-----------|-------------|---------|
+| `greet` | Welcome message functionality | Testing/Demo |
+| `test_poke_message` | Send test message to Poke | Connectivity Testing |
+| `search_code` | Search code within repository | Code Exploration |
+| `get_file_content` | Retrieve specific file contents | File Access |
+| `get_repository_info` | Get repo stats and information | Repository Overview |
+| `add_issue_comment` | Comment on GitHub issues | Issue Management |
+| `add_pr_comment` | Comment on pull requests | PR Management |
+| `close_issue` | Close GitHub issues | Issue Management |
+| `add_issue_labels` | Add labels to issues | Issue Organization |
+| `assign_issue` | Assign users to issues | Issue Assignment |
+
+## What I'd Do Next
+
+Built quickly for the challenge, but if I continued:
+
+- Use OAuth instead of personal access tokens
+- Make a proper GitHub App
+- Better logging and error handling
+- Add more GitHub functions (create issues, etc.)
+- Support multiple repos
 
 ## Poke Setup
 
