@@ -6,6 +6,9 @@ A FastMCP server that receives GitHub webhooks and forwards them to Poke API.
 import os
 import json
 import requests
+import logging
+import sys
+from datetime import datetime
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from starlette.requests import Request
@@ -19,6 +22,16 @@ from webhook_handlers import WebhookHandlers
 # Load environment variables
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # Initialize FastMCP
 mcp = FastMCP("GitHub-Poke Bridge")
 
@@ -26,6 +39,92 @@ mcp = FastMCP("GitHub-Poke Bridge")
 github_client = GitHubClient()
 poke_client = PokeClient()
 webhook_handlers = WebhookHandlers()
+
+
+# =============================================================================
+# LOGGING MIDDLEWARE
+# =============================================================================
+
+@mcp.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests with full details"""
+    start_time = datetime.now()
+
+    # Log incoming request
+    logger.info("="*80)
+    logger.info(f"📥 INCOMING REQUEST at {start_time}")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Path: {request.url.path}")
+    logger.info(f"Query params: {dict(request.query_params)}")
+
+    # Log headers
+    logger.info("Headers:")
+    for key, value in request.headers.items():
+        logger.info(f"  {key}: {value}")
+
+    # Try to log body for POST requests
+    if request.method == "POST":
+        try:
+            body = await request.body()
+            logger.info(f"Raw body length: {len(body)} bytes")
+            if len(body) > 0:
+                try:
+                    # Try to decode as JSON for pretty printing
+                    json_body = json.loads(body.decode('utf-8'))
+                    logger.info(f"JSON body: {json.dumps(json_body, indent=2)}")
+                except:
+                    # If not JSON, log as string (truncated if too long)
+                    body_str = body.decode('utf-8', errors='ignore')
+                    if len(body_str) > 1000:
+                        body_str = body_str[:1000] + "... (truncated)"
+                    logger.info(f"Body: {body_str}")
+
+            # Create new request with the body for downstream processing
+            async def new_receive():
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            # Recreate request with body
+            scope = request.scope.copy()
+            request = Request(scope, new_receive)
+
+        except Exception as e:
+            logger.error(f"Error reading request body: {e}")
+
+    # Process request
+    try:
+        response = await call_next(request)
+
+        # Log response
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        logger.info(f"📤 RESPONSE after {duration:.3f}s")
+        logger.info(f"Status: {response.status_code}")
+        logger.info(f"Headers:")
+        for key, value in response.headers.items():
+            logger.info(f"  {key}: {value}")
+
+        # Try to log response body if it's small enough
+        if hasattr(response, 'body'):
+            try:
+                # For streaming responses, we can't easily log the body
+                logger.info("Response: <streaming response>")
+            except:
+                pass
+
+        logger.info("="*80)
+        return response
+
+    except Exception as e:
+        # Log errors
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        logger.error(f"💥 ERROR after {duration:.3f}s")
+        logger.error(f"Exception: {type(e).__name__}: {str(e)}")
+        logger.error("="*80)
+        raise
 
 
 # =============================================================================
@@ -192,13 +291,18 @@ async def github_webhook(request: Request) -> JSONResponse:
         # Parse payload
         try:
             payload = json.loads(body.decode("utf-8"))
-        except Exception:
+            logger.info(f"🎣 WEBHOOK: Received {request.headers.get('X-GitHub-Event', 'unknown')} event")
+            logger.info(f"Payload size: {len(body)} bytes")
+        except Exception as e:
+            logger.error(f"🎣 WEBHOOK: Failed to parse JSON payload: {e}")
+            logger.error(f"Raw body (first 500 chars): {body.decode('utf-8', errors='ignore')[:500]}")
             return JSONResponse(
                 {"status": "error", "message": "Invalid JSON payload"}, status_code=400
             )
 
         # Basic payload validation
         if not isinstance(payload, dict):
+            logger.error(f"🎣 WEBHOOK: Invalid payload format - not a dict: {type(payload)}")
             return JSONResponse(
                 {"status": "error", "message": "Invalid payload format"},
                 status_code=400,
@@ -206,18 +310,23 @@ async def github_webhook(request: Request) -> JSONResponse:
 
         # Get event type and process webhook
         event_type = request.headers.get("X-GitHub-Event", "unknown")
+        logger.info(f"🎣 WEBHOOK: Processing {event_type} event")
         success = webhook_handlers.process_webhook(event_type, payload)
 
         if success:
+            logger.info(f"🎣 WEBHOOK: Successfully forwarded {event_type} to Poke")
             return JSONResponse({"status": "success", "message": "Forwarded to Poke"})
         else:
+            logger.error(f"🎣 WEBHOOK: Failed to forward {event_type} to Poke")
             return JSONResponse(
                 {"status": "error", "message": "Failed to forward to Poke"}
             )
 
     except Exception as e:
         # Log full error for debugging but don't expose details to client
-        print(f"❌ Webhook processing failed: {str(e)}")
+        logger.error(f"💥 WEBHOOK: Processing failed with exception: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return JSONResponse(
             {"status": "error", "message": "Webhook processing failed"}, status_code=500
         )
@@ -227,6 +336,13 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     host = "0.0.0.0"
 
-    print(f"Starting FastMCP server on {host}:{port}")
+    logger.info("🚀" + "="*77)
+    logger.info(f"🚀 Starting GitHub-Poke Bridge MCP Server")
+    logger.info(f"🚀 Server URL: http://{host}:{port}")
+    logger.info(f"🚀 MCP Endpoint: http://{host}:{port}/mcp")
+    logger.info(f"🚀 Webhook Endpoint: http://{host}:{port}/webhook/github")
+    logger.info(f"🚀 Environment: {os.environ.get('ENVIRONMENT', 'development')}")
+    logger.info(f"🚀 Logging level: {logger.level}")
+    logger.info("🚀" + "="*77)
 
     mcp.run(transport="http", host=host, port=port, stateless_http=True)
