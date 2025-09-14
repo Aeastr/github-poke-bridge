@@ -41,90 +41,6 @@ poke_client = PokeClient()
 webhook_handlers = WebhookHandlers()
 
 
-# =============================================================================
-# LOGGING MIDDLEWARE
-# =============================================================================
-
-@mcp.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all incoming requests with full details"""
-    start_time = datetime.now()
-
-    # Log incoming request
-    logger.info("="*80)
-    logger.info(f"📥 INCOMING REQUEST at {start_time}")
-    logger.info(f"Method: {request.method}")
-    logger.info(f"URL: {request.url}")
-    logger.info(f"Path: {request.url.path}")
-    logger.info(f"Query params: {dict(request.query_params)}")
-
-    # Log headers
-    logger.info("Headers:")
-    for key, value in request.headers.items():
-        logger.info(f"  {key}: {value}")
-
-    # Try to log body for POST requests
-    if request.method == "POST":
-        try:
-            body = await request.body()
-            logger.info(f"Raw body length: {len(body)} bytes")
-            if len(body) > 0:
-                try:
-                    # Try to decode as JSON for pretty printing
-                    json_body = json.loads(body.decode('utf-8'))
-                    logger.info(f"JSON body: {json.dumps(json_body, indent=2)}")
-                except:
-                    # If not JSON, log as string (truncated if too long)
-                    body_str = body.decode('utf-8', errors='ignore')
-                    if len(body_str) > 1000:
-                        body_str = body_str[:1000] + "... (truncated)"
-                    logger.info(f"Body: {body_str}")
-
-            # Create new request with the body for downstream processing
-            async def new_receive():
-                return {"type": "http.request", "body": body, "more_body": False}
-
-            # Recreate request with body
-            scope = request.scope.copy()
-            request = Request(scope, new_receive)
-
-        except Exception as e:
-            logger.error(f"Error reading request body: {e}")
-
-    # Process request
-    try:
-        response = await call_next(request)
-
-        # Log response
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-
-        logger.info(f"📤 RESPONSE after {duration:.3f}s")
-        logger.info(f"Status: {response.status_code}")
-        logger.info(f"Headers:")
-        for key, value in response.headers.items():
-            logger.info(f"  {key}: {value}")
-
-        # Try to log response body if it's small enough
-        if hasattr(response, 'body'):
-            try:
-                # For streaming responses, we can't easily log the body
-                logger.info("Response: <streaming response>")
-            except:
-                pass
-
-        logger.info("="*80)
-        return response
-
-    except Exception as e:
-        # Log errors
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-
-        logger.error(f"💥 ERROR after {duration:.3f}s")
-        logger.error(f"Exception: {type(e).__name__}: {str(e)}")
-        logger.error("="*80)
-        raise
 
 
 # =============================================================================
@@ -135,6 +51,7 @@ async def log_requests(request: Request, call_next):
 @mcp.tool(description="Greet a user by name with a welcome message from the MCP server")
 def greet(name: str) -> str:
     """Simple greeting function for testing MCP connectivity."""
+    logger.info(f"🔧 TOOL CALL: greet(name='{name}')")
     return f"Hello, {name}! Welcome to GitHub-Poke Bridge MCP server!"
 
 
@@ -154,7 +71,16 @@ def get_server_info() -> dict:
 @mcp.tool(description="Add a comment to a GitHub issue")
 def add_issue_comment(owner: str, repo: str, issue_number: int, comment: str) -> dict:
     """Add a comment to a GitHub issue."""
-    return github_client.add_issue_comment(owner, repo, issue_number, comment)
+    logger.info(f"🔧 TOOL CALL: add_issue_comment(owner='{owner}', repo='{repo}', issue_number={issue_number})")
+    try:
+        result = github_client.add_issue_comment(owner, repo, issue_number, comment)
+        logger.info(f"✅ add_issue_comment result: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ add_issue_comment failed: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise
 
 
 @mcp.tool(description="Add a comment to a GitHub pull request")
